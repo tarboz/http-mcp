@@ -1,0 +1,15 @@
+{
+  "name:": "common",
+  "version": "1.0.0",
+  "description": "Common scripts",
+  "exports": {
+    "./utils": "./dist/utils.js"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "keywords": ["Scripts, Utils"],
+  "author": "Taras Bozhok",
+  "license": "ISC",
+  "type": "module"
+}

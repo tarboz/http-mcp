@@ -1,14 +1,29 @@
-import { McpServer } from '@modelcontextprotocol/server';
-import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
-import { z } from 'zod';
-import { styleText } from 'node:util';
+#!/usr/bin/env node
 
-import { serve } from '@hono/node-server';
-import { Hono } from 'hono';
+import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
+import { McpServer } from '@modelcontextprotocol/server';
+import z from "zod";
+import { parseArgs } from 'node:util';
+import { createServer } from 'node:http';
+import { printTextWithHeading } from 'common/utils';
+
+var { port: portArg, debug: debugMode } = parseArgs({
+    args: process.argv.slice(2),
+    options: {
+        port: { type: 'string', short: 'p' },
+        debug: { type: 'boolean', short: 'd' },
+    }
+}).values;
+
+portArg = portArg || process.env.PORT || '8000';
+debugMode = debugMode || process.env.DEBUG?.toLowerCase() === 'true';
 
 const NWS_API_BASE = 'https://api.weather.gov';
 const USER_AGENT = 'weather-app/1.0.0';
-const PORT = 8090;
+const PORT = +portArg;
+
+var debug = debugMode ? printTextWithHeading : () => {};
+debug('Running in DEBUG mode');
 
 var server = new McpServer({
     name: 'weather',
@@ -22,14 +37,14 @@ async function makeNWSRequest<T>(url: string): Promise<T | null> {
     };
 
     return fetch(url, { headers })
-    .then((response) => {
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        return response.json() as T;
-    })
-    .catch((err) => {
-        console.error("Error making NWS request:", err);
-        return null;
-    });
+        .then((response) => {
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            return response.json() as T;
+        })
+        .catch((err) => {
+            console.error("Error making NWS request:", err);
+            return null;
+        });
 }
 
 interface AlertFeature {
@@ -89,10 +104,10 @@ server.registerTool(
                 .string()
                 .length(2)
                 .describe('Two-letter state code (e.g. CA, NY)')
-        }).strip()
+        }),
     },
-    async (args: { state: string }) => {
-        const stateCode = args.state.toUpperCase();
+    async ({ state }: { state: string }) => {
+        const stateCode = state.toUpperCase();
         const alertsUrl = `${NWS_API_BASE}/alerts?area=${stateCode}`;
         var alertsData = await makeNWSRequest<AlertsResponse>(alertsUrl);
 
@@ -121,15 +136,16 @@ server.registerTool(
                 .number()
                 .min(-90)
                 .max(90)
-                .describe('Latitude of the location'),
+                .describe("Latitude of the location"),
             longitude: z
                 .number()
                 .min(-180)
                 .max(180)
-                .describe('Longitude of the location'),
-        }).strip()
+                .describe("Longitude of the location"),
+            }
+        ),
     },
-    async (args: { latitude: number; longitude: number }) => {
+    async ({ latitude, longitude }: { latitude: number; longitude: number }) => {
         var pointsUrl = `${NWS_API_BASE}/points/${latitude.toFixed(4)},${longitude.toFixed(4)}`;
         var pointsData = await makeNWSRequest<PointsResponse>(pointsUrl);
 
@@ -179,31 +195,36 @@ function formatToolResponse(text: string): { content: [{ type: 'text', text: str
     }
 }
 
-async function main() {
-    var transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    await server.connect(transport);
+var lastConnectedTransport: NodeStreamableHTTPServerTransport | undefined;
 
-    var app = new Hono();
-    app.all('/mcp', async (c) => {
-        // @ts-ignore
-        return transport.handleRequest(c.req.raw, c.res.raw);
-    });
-    serve({
-        fetch: app.fetch,
-        port: 8787,
-    })
+async function main() {
+    createServer(async (req, res) => {
+        // res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        if (req.url === "/mcp" && req.method === "POST") {
+            res.setHeader('Access-Control-Allow-Origin', 'http://192.168.0.202:8080');
+            var transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+            await server.connect(transport);
+            lastConnectedTransport = transport;
+            return await transport.handleRequest(req, res);
+        }
+
+        if (req.method === 'OPTIONS') {
+            res.writeHead(200, { 'Access-Control-Allow-Origin': 'http://192.168.0.202:8080', 'Access-Control-Allow-Headers': 'Content-Type, mcp-protocol-version' });
+            return res.end();
+        }
+        return res.end('NOT SUPPORTED');
+    }).listen(PORT);
 }
 
-main().catch((error) => {
+main()
+.then(() => debug(`Listening ${PORT}`))
+.catch((error) => {
   console.error('Fatal error in main():', error);
   process.exit(1);
 });
 
-function logger(msg: Error | string | Object) {
-    Promise.resolve().then(() => {
-        var message = msg instanceof Error ? msg.message : msg;
-        if (typeof message === 'object') message = JSON.stringify(message);
-        console.log( styleText(['green', 'bold'], 'DEBUG') );
-        console.log( styleText('green', String(message)) );
-    });
-}
+process.on('SIGINT', async () => {
+    await lastConnectedTransport?.close();
+    debug('CLOSED!');
+    process.exit(0);
+})

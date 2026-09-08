@@ -1,26 +1,23 @@
 {
-  "name": "mcp-http",
+  "name": "mcp-projects",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "bin": "./build/index.js",
-  "scripts": {
-    "build": "tsc && chmod 755 build/mcp-http.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "description": "MCP server, MCP client, MCP SDK server implementations",
+  "bin": {
+    "mcp-server": "./dist/mcp-server.js",
+    "mcp-sdk-server": "./dist/mcp-sdk-server.js"
   },
-  "keywords": [],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "start-mcp": "node ./dist/mcp-server.js",
+    "start-mcp-sdk": "node ./dist/mcp-sdk-server.js"
+  },
+  "workspaces": ["common", "server", "server-sdk", "client"],
+  "keywords": ["MCP Server", "MCP Client", "MCP SDK Server"],
   "author": "Taras Bozhok",
   "license": "ISC",
   "type": "module",
-  "devDependencies": {
-    "@types/node": "^25.9.3",
-    "typescript": "^6.0.3",
-    "zod": "^3.25.76"
-  },
   "dependencies": {
-    "@modelcontextprotocol/node": "^2.0.0-alpha.2",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@modelcontextprotocol/server": "^2.0.0-alpha.2",
-    "hono": "^4.12.25"
+    "@types/node": "^26.4.1",
+    "typescript": "^7.0.2"
   }
 }
